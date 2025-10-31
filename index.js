@@ -20,11 +20,11 @@ const PUZZLEBOT_PRODUCT_MAP = {
 
 // --- ID АДМИНИСТРАТОРА ---
 // !!! ВАЖНО: Замените 123456789 на ваш реальный Telegram ID (узнать у бота @userinfobot)
-const ADMIN_ID = 123456789;
+const ADMIN_ID = 5390635485;
 
 // --- ТОКЕН ВАШЕГО БОТА ---
 // !!! ВАЖНО: Вставьте сюда токен, который вы получили от @BotFather
-const BOT_TOKEN = 'YOUR_BOT_TOKEN';
+const BOT_TOKEN = '8153556200:AAHsHrkeIruQ2YU3Bf-ANCkpvcbSQNvnS-Y';
 
 
 // --- ОСНОВНОЙ КОД СЕРВЕРА (НЕ МЕНЯТЬ) ---

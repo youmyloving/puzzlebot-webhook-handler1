@@ -31,8 +31,16 @@ const BOT_TOKEN = '8153556200:AAHsHrkeIruQ2YU3Bf-ANCkpvcbSQNvnS-Y';
 const express = require('express');
 const bodyParser = require('body-parser');
 const https = require('https');
+const cors = require('cors');
 
 const app = express();
+
+app.use(cors({
+    origin: '*', // Или укажите конкретный домен вашего веб-приложения
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(bodyParser.json());
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;

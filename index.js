@@ -135,9 +135,10 @@ app.post("/", async (req, res) => {
   if (update.message && update.message.web_app_data) {
     const user = update.message.from;
     let payload;
+    payload = JSON.parse(update.message.web_app_data.data);
 
     try {
-      payload = JSON.parse(update.message.web_app_data.data);
+      console.log(payload);
     } catch (e) {
       await sendMessage(
         user.id,

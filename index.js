@@ -132,36 +132,36 @@ app.post("/", async (req, res) => {
 
   const update = req.body;
 
+  const user = update.message.from;
+  let payload;
+  payload = JSON.parse(update.message.web_app_data.data);
+
+  try {
+    console.log(payload);
+  } catch (e) {
+    await sendMessage(
+      user.id,
+      "❌ Не удалось прочитать данные заказа. Пожалуйста, попробуйте еще раз."
+    );
+    return res.sendStatus(200);
+  }
+
+  let adminMessage = `🛒 *Новый заказ от Mini App!*\n\n`;
+  adminMessage += `👤 Пользователь: ${user.first_name} ${
+    user.last_name || ""
+  } (@${user.username || "no_username"})\n`;
+  adminMessage += `🆔 ID: ${user.id}\n\n`;
+  adminMessage += `📦 *Состав заказа:*\n`;
+
+  payload.items.forEach((item) => {
+    adminMessage += `— ${item.name} (${item.variant}) - ${item.qty} шт.\n`;
+  });
+
+  adminMessage += `\n💰 *Итоговая сумма:* ${payload.total} ₽`;
+
+  await sendMessage(ADMIN_ID, adminMessage);
+
   if (update.message && update.message.web_app_data) {
-    const user = update.message.from;
-    let payload;
-    payload = JSON.parse(update.message.web_app_data.data);
-
-    try {
-      console.log(payload);
-    } catch (e) {
-      await sendMessage(
-        user.id,
-        "❌ Не удалось прочитать данные заказа. Пожалуйста, попробуйте еще раз."
-      );
-      return res.sendStatus(200);
-    }
-
-    let adminMessage = `🛒 *Новый заказ от Mini App!*\n\n`;
-    adminMessage += `👤 Пользователь: ${user.first_name} ${
-      user.last_name || ""
-    } (@${user.username || "no_username"})\n`;
-    adminMessage += `🆔 ID: ${user.id}\n\n`;
-    adminMessage += `📦 *Состав заказа:*\n`;
-
-    payload.items.forEach((item) => {
-      adminMessage += `— ${item.name} (${item.variant}) - ${item.qty} шт.\n`;
-    });
-
-    adminMessage += `\n💰 *Итоговая сумма:* ${payload.total} ₽`;
-
-    await sendMessage(ADMIN_ID, adminMessage);
-
     let userMessage = "✅ Ваш заказ успешно получен!\n\n";
     userMessage += "Мы свяжемся с вами в ближайшее время для подтверждения.";
     await sendMessage(user.id, userMessage);

@@ -1,10 +1,16 @@
-// ====== СЫРОМАНИЯ — Telegram Webhook Backend (упрощённый и надёжный) ======
-// ⚠️ СЕКРЕТЫ В КОДЕ — оставлены по вашей просьбе. Потом перенесите в .env и ревокните токен.
+// ====== СЫРОМАНИЯ — Telegram Webhook Backend (2‑бота: отдельный заказной бот) ======
+// ⚠️ СЕКРЕТЫ В КОДЕ оставлены по вашей просьбе. Потом перенесите в .env и ревокните токены.
 
-// --- СЕКРЕТЫ ---
-const BOT_TOKEN = "8471372842:AAESenmIMBk8627-Y6e1iDOwnBds6pmu0zI"; // токен бота из @BotFather
-const ADMIN_ID = 449468735; // ваш Telegram ID (убедитесь, что нажали /start этому боту)
-const PUBLIC_URL = "https://puzzlebot-webhook-handler1.onrender.com/"; // URL для setWebhook (если нужен)
+// --- ENV / СЕКРЕТЫ ---
+// Новый БОТ ТОЛЬКО ДЛЯ ЗАКАЗОВ (используется для отправки сообщений админу и пользователю)
+const ORDER_BOT_TOKEN = process.env.ORDER_BOT_TOKEN || "8486413223:AAFSpmYn4CjBUq4sWvFvE9Y7_9I9cmPbA70";
+// ID администратора, кому слать заказы (начните диалог с ботом, чтобы он мог вам писать)
+const ADMIN_ID = Number(process.env.ADMIN_ID || "449468735");
+// Публичный базовый URL вашего Render без завершающего "/" (для вебхука нового бота, если нужен)
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://puzzlebot-webhook-handler1.onrender.com";
+
+// Если у вас есть ещё один «старый» бот под ПазлБота — он не мешает:
+// мы используем ДРУГОЙ токен (ORDER_BOT_TOKEN), так что конфликта вебхуков не будет.
 
 // --- ЗАВИСИМОСТИ ---
 const express = require("express");
@@ -18,11 +24,11 @@ app.use(bodyParser.json({ limit: "1mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ TG API ---
-function tgRequest(method, payloadObj) {
+function tgRequest(botToken, method, payloadObj) {
   const data = JSON.stringify(payloadObj || {});
   const options = {
     hostname: "api.telegram.org",
-    path: `/bot${BOT_TOKEN}/${method}`,
+    path: `/bot${botToken}/${method}`,
     method: "POST",
     headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
   };
@@ -40,8 +46,8 @@ function tgRequest(method, payloadObj) {
   });
 }
 
-function sendMessage(chatId, text, parse_mode = "HTML") {
-  return tgRequest("sendMessage", { chat_id: chatId, text, parse_mode, disable_web_page_preview: true });
+function sendOrderBotMessage(chatId, text, parse_mode = "HTML") {
+  return tgRequest(ORDER_BOT_TOKEN, "sendMessage", { chat_id: chatId, text, parse_mode, disable_web_page_preview: true });
 }
 
 // --- ХЕЛПЕРЫ ---
@@ -49,20 +55,15 @@ function escapeHtml(s = "") {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Универсальный форматтер: понимает payload и из WebApp (axios), и через web_app_data
 function buildAdminText(payload, userFromUpdate) {
   const p = payload || {};
   const u = (p.telegram && p.telegram.user) || userFromUpdate || {};
-
   const username = u.username ? `@${u.username}` : "—";
   const fio = [u.first_name, u.last_name].filter(Boolean).join(" ") || "—";
-
-  // поддержим несколько вариантов названий полей
   const phone = p.contact?.phone || p.contact_phone || p.phone || "—";
   const address = p.contact?.address || p.delivery_address || p.address || "—";
   const comment = p.contact?.comment || p.comment || "—";
   const total = p.total || 0;
-
   let lines = "";
   (p.items || []).forEach((item) => {
     const name = item.name || "—";
@@ -71,9 +72,7 @@ function buildAdminText(payload, userFromUpdate) {
     const lineTotal = item.line_total ?? "";
     lines += `— ${escapeHtml(name)} (${escapeHtml(variant)}) × ${qty}${lineTotal ? ` = ${lineTotal} ₽` : ""}\n`;
   });
-
   const when = p?.meta?.ts ? new Date(p.meta.ts).toLocaleString("ru-RU") : new Date().toLocaleString("ru-RU");
-
   return (
     `🛒 <b>Новый заказ из Mini App</b>\n\n` +
     `🕒 <b>Время:</b> ${escapeHtml(when)}\n` +
@@ -88,24 +87,18 @@ function buildAdminText(payload, userFromUpdate) {
   );
 }
 
-// --- МАРШРУТ 1: Прямой заказ из мини-приложения (axios POST) ---
-// Это самый простой путь: фронт шлёт JSON на /order, а мы пингуем админа.
+// --- 1) ПРЯМОЙ ПРИЁМ ЗАКАЗОВ С ФРОНТА (axios POST) ---
+// Рекомендуемый путь: фронт шлёт JSON на /order, а мы рассылаем из «заказного» бота.
 app.post("/order", async (req, res) => {
   try {
     const payload = req.body || {};
-    if (!payload || payload.type !== "cart") {
-      return res.status(400).json({ ok: false, error: "Bad payload" });
-    }
+    if (!payload || payload.type !== "cart") return res.status(400).json({ ok: false, error: "Bad payload" });
 
-    // Сообщение админу
     const adminText = buildAdminText(payload, null);
-    await sendMessage(ADMIN_ID, adminText);
+    await sendOrderBotMessage(ADMIN_ID, adminText);
 
-    // Если фронт передал telegram.user.id — подтвердим пользователю тоже
     const userId = payload.telegram?.user?.id;
-    if (userId) {
-      await sendMessage(userId, "✅ Заказ получен!\nМы свяжемся для подтверждения. Спасибо! 🙌");
-    }
+    if (userId) await sendOrderBotMessage(userId, "✅ Заказ получен!\nМы свяжемся для подтверждения. Спасибо! 🙌");
 
     return res.status(200).json({ ok: true });
   } catch (e) {
@@ -114,72 +107,80 @@ app.post("/order", async (req, res) => {
   }
 });
 
-// --- МАРШРУТ 2: TG WEBHOOK — если решите отправлять данные через WebApp.sendData ---
-app.post("/", async (req, res) => {
+// --- 2) ВЕБХУК НОВОГО ЗАКАЗНОГО БОТА (необязательно, только если захотите sendData) ---
+// Настройка вебхука: GET /setWebhook?bot=order → url будет `${PUBLIC_BASE_URL}/order-bot-webhook`
+app.post("/order-bot-webhook", async (req, res) => {
   try {
     const update = req.body || {};
-    console.log("Received webhook:", JSON.stringify(update, null, 2));
 
-    // A) Текстовое сообщение (например, /start) — визитка
+    // A) Текстовое /start и т.п. — визитка
     if (update.message && update.message.text && !update.message.web_app_data) {
       const chatId = update.message.chat.id;
-      await sendMessage(
-        chatId,
-        "👋 Я принимаю заказы из мини‑приложения <b>Сыромания</b>.\nОткрой мини‑приложение, собери корзину и нажми «Отправить» — заказ придёт админу."
-      );
+      await sendOrderBotMessage(chatId, "👋 Я принимаю заказы из мини‑приложения <b>Сыромания</b>.\nСоберите корзину и нажмите «Отправить» — заказ придёт админу.");
       return res.sendStatus(200);
     }
 
-    // B) Данные, присланные из WebApp через WebApp.sendData(...)
+    // B) Данные из WebApp.sendData(JSON)
     if (update.message && update.message.web_app_data) {
       const user = update.message.from;
       let payload = {};
-      try {
-        payload = JSON.parse(update.message.web_app_data.data || "{}");
-      } catch (e) {
-        await sendMessage(user.id, "❌ Не удалось разобрать данные заказа. Попробуйте ещё раз.");
+      try { payload = JSON.parse(update.message.web_app_data.data || "{}"); }
+      catch (e) {
+        await sendOrderBotMessage(user.id, "❌ Не удалось разобрать данные заказа. Попробуйте ещё раз.");
         return res.sendStatus(200);
       }
-
       const adminText = buildAdminText(payload, user);
-      await sendMessage(ADMIN_ID, adminText);
-      await sendMessage(user.id, "✅ Заказ получен!\nМы скоро свяжемся для подтверждения и доставки. Спасибо! 🙌");
+      await sendOrderBotMessage(ADMIN_ID, adminText);
+      await sendOrderBotMessage(user.id, "✅ Заказ получен!\nМы скоро свяжемся для подтверждения и доставки. Спасибо! 🙌");
       return res.sendStatus(200);
     }
 
-    // C) Если случайно пришёл прямой JSON заказа на корень "/" — тоже обработаем (для совместимости)
+    // C) Если случайно прислали JSON заказа прямо сюда
     if (update && update.type === "cart") {
       const adminText = buildAdminText(update, update.telegram?.user || null);
-      await sendMessage(ADMIN_ID, adminText);
+      await sendOrderBotMessage(ADMIN_ID, adminText);
       const userId = update.telegram?.user?.id;
-      if (userId) await sendMessage(userId, "✅ Заказ получен! Мы свяжемся.");
+      if (userId) await sendOrderBotMessage(userId, "✅ Заказ получен! Мы свяжемся.");
       return res.sendStatus(200);
     }
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error("/order-bot-webhook error:", err);
     return res.sendStatus(200);
   }
 });
 
-// --- ХЭЛСЧЕК ---
+// --- HEALTH ---
 app.get("/health", (req, res) => res.status(200).send("ok"));
 
-// --- ХЕЛПЕРЫ ДЛЯ УСТАНОВКИ/СБРОСА ВЕБХУКА (нужны только для варианта sendData) ---
+// --- ХЕЛПЕРЫ УПРАВЛЕНИЯ ВЕБХУКОМ ДЛЯ ЗАКАЗНОГО БОТА ---
 app.get("/setWebhook", async (req, res) => {
-  try { const r = await tgRequest("setWebhook", { url: PUBLIC_URL }); res.status(200).json(r); }
-  catch (e) { res.status(500).json({ error: String(e) }); }
+  try {
+    const which = (req.query.bot || "").toLowerCase();
+    if (which !== "order") return res.status(400).json({ error: "specify ?bot=order" });
+    const url = `${PUBLIC_BASE_URL.replace(/\/$/, "")}/order-bot-webhook`;
+    const r = await tgRequest(ORDER_BOT_TOKEN, "setWebhook", { url });
+    res.status(200).json(r);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
 app.get("/deleteWebhook", async (req, res) => {
-  try { const r = await tgRequest("deleteWebhook", {}); res.status(200).json(r); }
-  catch (e) { res.status(500).json({ error: String(e) }); }
+  try {
+    const which = (req.query.bot || "").toLowerCase();
+    if (which !== "order") return res.status(400).json({ error: "specify ?bot=order" });
+    const r = await tgRequest(ORDER_BOT_TOKEN, "deleteWebhook", {});
+    res.status(200).json(r);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
 app.get("/getWebhookInfo", async (req, res) => {
-  try { const r = await tgRequest("getWebhookInfo", {}); res.status(200).json(r); }
-  catch (e) { res.status(500).json({ error: String(e) }); }
+  try {
+    const which = (req.query.bot || "").toLowerCase();
+    if (which !== "order") return res.status(400).json({ error: "specify ?bot=order" });
+    const r = await tgRequest(ORDER_BOT_TOKEN, "getWebhookInfo", {});
+    res.status(200).json(r);
+  } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
 // --- ЗАПУСК ---

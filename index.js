@@ -1,176 +1,204 @@
-// --- КАРТА СООТВЕТСТВИЯ ТОВАРОВ ---
-const PUZZLEBOT_PRODUCT_MAP = {
-  "panir-classic": 100003,
-  "panir-herbs": 100004,
-  "panir-spicy": 100005,
-  "panir-smoked": 100006,
-  suluguni: 100007,
-  "suluguni-smoked": 100008,
-  imeretian: 100009,
-  "imeretian-dill-garlic": 100010,
-  halloumi: 100011,
-  "halloumi-paprika-oregano": 100012,
-  "halloumi-tomato-basil-garlic": 100013,
-  "halloumi-tomato-paprika": 100014,
-  kosichka: 100001,
-  "kosichka-smoked": 100002,
-  "spicy-klubok": 100015,
-  mozzarella: 100016,
-  buratta: 100017,
-  ricotta: 100018,
-  "ricotta-herbs": 100019,
-  caciotta: 100020,
-  "caciotta-fenugreek": 100021,
-  "hard-village": 100022,
-  "hard-smoked": 100023,
-  "rolls-olives-walnut": 100024,
-  "rolls-apricot-cedar": 100025,
-  milk: 100042,
-  "milk-topped": 100043,
-  ryazhenka: 100044,
-  whey: 100046,
-  cream: 100045,
-  tvorog: 100047,
-  butter: 100048,
-  ghee: 100049,
-  "condensed-milk": 100050,
-  "tvorozhnaya-massa": 100052,
-  "cookies-tvorog": 100034,
-  "cookies-oat": 100035,
-  "cookies-nut": 100036,
-  "cookies-carob": 100037,
-  "cookies-sandy": 100038,
-  "muffin-plain": 100054,
-  "muffin-carob": 100055,
-  "muffin-raisin": 100056,
-  "muffin-mix-plain-raisin": 100057,
-  "muffin-mix-plain-carob": 100058,
-  "muffin-mix-raisin-carob": 100059,
-  "sandesh-orange": 100026,
-  "sandesh-walnut": 100028,
-  "sandesh-carob": 100027,
-  "barfi-classic": 100029,
-  "barfi-hazelnut": 100030,
-  "barfi-sesame": 100031,
-  halva: 100032,
-  "potato-cake-5": 100033,
-  "casserole-plain": 100039,
-  "casserole-raisin": 100040,
-  "crazy-cake": 100041,
-  "coconut-kuchen-1kg": 100060,
-  "napoleon-1kg": 100061,
-  "apple-pie": 100062,
-  "bliny-10": 100063,
-  "syrniki-10": 100064,
-  "chapati-10": 100065,
-  "misthi-dahi": 1000067,
-};
+// ====== СЫРОМАНИЯ — Telegram Webhook Backend ======
+// ⚠️ СЕКРЕТЫ В КОДЕ — ТОЛЬКО ЕСЛИ ПРОЕКТ НЕ ПУБЛИЧНЫЙ!
+// Рекомендация: после запуска переведи на .env и ревокни токен.
 
-// --- ID АДМИНИСТРАТОРА ---
-// !!! ВАЖНО: Замените 123456789 на ваш реальный Telegram ID (узнать у бота @userinfobot)
-const ADMIN_ID = 449468735;
+// --- ТВОИ СЕКРЕТЫ (вшито по просьбе) ---
+const BOT_TOKEN = "8471372842:AAESenmIMBk8627-Y6e1iDOwnBds6pmu0zI"; // токен бота из @BotFather
+const ADMIN_ID = 449468735; // твой Telegram ID из @userinfobot
 
-// --- ТОКЕН ВАШЕГО БОТА ---
-// !!! ВАЖНО: Вставьте сюда токен, который вы получили от @BotFather
-const BOT_TOKEN = "8471372842:AAESenmIMBk8627-Y6e1iDOwnBds6pmu0zI";
+// --- ПУБЛИЧНЫЙ URL ТВОЕГО ХОСТА (Render) ---
+// Нужен для /setWebhook-хелпера. Должен указывать ровно на корень, который принимает POST апдейты.
+const PUBLIC_URL = "https://puzzlebot-webhook-handler1.onrender.com/";
 
-// --- ОСНОВНОЙ КОД СЕРВЕРА (НЕ МЕНЯТЬ) ---
+// --- ПОДГОТОВКА СЕРВЕРА ---
 const express = require("express");
 const bodyParser = require("body-parser");
 const https = require("https");
 const cors = require("cors");
 
 const app = express();
-
 app.use(
   cors({
-    origin: "*", // Или укажите конкретный домен вашего веб-приложения
+    origin: "*",
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+app.use(bodyParser.json({ limit: "1mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(bodyParser.json());
-
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-
-const sendMessage = async (chatId, text) => {
-  const data = JSON.stringify({
-    chat_id: chatId,
-    text: text,
-    parse_mode: "Markdown",
-  });
-
+// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ TG API ---
+function tgRequest(method, payloadObj) {
+  const data = JSON.stringify(payloadObj || {});
   const options = {
     hostname: "api.telegram.org",
-    path: `/bot${BOT_TOKEN}/sendMessage`,
+    path: `/bot${BOT_TOKEN}/${method}`,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Content-Length": data.length,
+      "Content-Length": Buffer.byteLength(data),
     },
   };
-
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
-      res.on("data", (d) => {
-        resolve(d);
+      let chunks = "";
+      res.on("data", (d) => (chunks += d));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(chunks));
+        } catch (e) {
+          resolve(chunks);
+        }
       });
     });
-
-    req.on("error", (error) => {
-      reject(error);
-    });
-
+    req.on("error", reject);
     req.write(data);
     req.end();
   });
-};
+}
 
-app.post("/", async (req, res) => {
-  console.log("Received webhook:", JSON.stringify(req.body, null, 2));
+function sendMessage(chatId, text, parse_mode = "HTML") {
+  return tgRequest("sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode,
+    disable_web_page_preview: true,
+  });
+}
 
-  const update = req.body;
+// --- ХЕЛПЕРЫ ФОРМАТИРОВАНИЯ ---
+function escapeHtml(s = "") {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
-  const user = update.message.from;
-  let payload;
-  payload = JSON.parse(update.message.web_app_data.data);
+function formatAdminMessage(payload, user) {
+  const u = user || {};
+  const username = u.username ? `@${u.username}` : "—";
+  const fio = [u.first_name, u.last_name].filter(Boolean).join(" ") || "—";
 
-  try {
-    console.log(payload);
-  } catch (e) {
-    await sendMessage(
-      user.id,
-      "❌ Не удалось прочитать данные заказа. Пожалуйста, попробуйте еще раз."
-    );
-    return res.sendStatus(200);
-  }
+  const phone = payload.contact_phone || "—";
+  const address = payload.delivery_address || "—";
+  const comment = payload.comment || "—";
+  const total = payload.total || 0;
 
-  let adminMessage = `🛒 *Новый заказ от Mini App!*\n\n`;
-  adminMessage += `👤 Пользователь: ${user.first_name} ${
-    user.last_name || ""
-  } (@${user.username || "no_username"})\n`;
-  adminMessage += `🆔 ID: ${user.id}\n\n`;
-  adminMessage += `📦 *Состав заказа:*\n`;
-
-  payload.items.forEach((item) => {
-    adminMessage += `— ${item.name} (${item.variant}) - ${item.qty} шт.\n`;
+  let lines = "";
+  (payload.items || []).forEach((item) => {
+    const name = item.name || "—";
+    const variant = item.variant || "—";
+    const qty = item.qty || 0;
+    const lineTotal = item.line_total ?? "";
+    lines += `— ${escapeHtml(name)} (${escapeHtml(variant)}) × ${qty}${
+      lineTotal ? ` = ${lineTotal} ₽` : ""
+    }\n`;
   });
 
-  adminMessage += `\n💰 *Итоговая сумма:* ${payload.total} ₽`;
+  const when = payload?.meta?.ts
+    ? new Date(payload.meta.ts).toLocaleString("ru-RU")
+    : new Date().toLocaleString("ru-RU");
 
-  await sendMessage(ADMIN_ID, adminMessage);
+  return (
+    `🛒 <b>Новый заказ из Mini App</b>\n\n` +
+    `🕒 <b>Время:</b> ${escapeHtml(when)}\n` +
+    `👤 <b>Пользователь:</b> ${escapeHtml(fio)} (${escapeHtml(username)})\n` +
+    `🆔 <b>ID:</b> ${u.id}\n\n` +
+    `📞 <b>Телефон:</b> ${escapeHtml(phone)}\n` +
+    `📍 <b>Адрес:</b> ${escapeHtml(address)}\n` +
+    `📝 <b>Комментарий:</b> ${escapeHtml(comment)}\n\n` +
+    `📦 <b>Состав заказа:</b>\n` +
+    `${lines || "—"}\n` +
+    `💰 <b>Итого:</b> ${total} ₽`
+  );
+}
 
-  if (update.message && update.message.web_app_data) {
-    let userMessage = "✅ Ваш заказ успешно получен!\n\n";
-    userMessage += "Мы свяжемся с вами в ближайшее время для подтверждения.";
-    await sendMessage(user.id, userMessage);
+// --- ОСНОВНОЙ ВЕБХУК: TG → НАШ СЕРВЕР ---
+app.post("/", async (req, res) => {
+  try {
+    const update = req.body;
+    console.log("Received webhook:", JSON.stringify(update, null, 2));
+
+    // 1) /start или текстовые сообщения — просто ответим-визитка
+    if (update.message && update.message.text && !update.message.web_app_data) {
+      const chatId = update.message.chat.id;
+      await sendMessage(
+        chatId,
+        "👋 Я принимаю заказы из мини-приложения <b>Сыромания</b>.\n" +
+          "Открой мини-приложение, собери корзину и нажми «Отправить» — заказ придёт админу."
+      );
+      return res.sendStatus(200);
+    }
+
+    // 2) Заказ из mini-app приходит тут
+    if (update.message && update.message.web_app_data) {
+      const user = update.message.from;
+      let payload = {};
+      try {
+        payload = JSON.parse(update.message.web_app_data.data || "{}");
+      } catch (e) {
+        await sendMessage(
+          user.id,
+          "❌ Не удалось разобрать данные заказа. Попробуйте ещё раз."
+        );
+        return res.sendStatus(200);
+      }
+
+      // Сообщение админу
+      const adminText = formatAdminMessage(payload, user);
+      await sendMessage(ADMIN_ID, adminText);
+
+      // Подтверждение пользователю
+      await sendMessage(
+        user.id,
+        "✅ Заказ получен!\n" +
+          "Мы скоро свяжемся для подтверждения и согласования доставки. Спасибо! 🙌"
+      );
+
+      return res.sendStatus(200);
+    }
+
+    // 3) Прочие апдейты — игнорируем молча
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.sendStatus(200);
   }
-
-  res.sendStatus(200);
 });
 
+// --- ХЭЛСЧЕК ---
+app.get("/health", (req, res) => res.status(200).send("ok"));
+
+// --- ХЕЛПЕРЫ ДЛЯ УСТАНОВКИ/СБРОСА ВЕБХУКА ---
+app.get("/setWebhook", async (req, res) => {
+  try {
+    const r = await tgRequest("setWebhook", { url: PUBLIC_URL });
+    res.status(200).json(r);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get("/deleteWebhook", async (req, res) => {
+  try {
+    const r = await tgRequest("deleteWebhook", {});
+    res.status(200).json(r);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get("/getWebhookInfo", async (req, res) => {
+  try {
+    const r = await tgRequest("getWebhookInfo", {});
+    res.status(200).json(r);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// --- ЗАПУСК ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`✅ Server listening on :${PORT}`);
 });
